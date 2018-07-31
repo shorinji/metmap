@@ -1,6 +1,7 @@
 import sys
 import struct
 
+from INES import Header
 from MetroidRoom import Room
 from MetroidZone import *
 
@@ -76,6 +77,10 @@ if fileContent is None:
 	sys.exit(0)
 
 ###################################### load overall map
+
+inesHeader = Header(fileContent)
+
+print(inesHeader)
 
 
 mapDataRowOffsets = []
