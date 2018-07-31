@@ -172,18 +172,25 @@ for offsets in brinstarObjectDoorEnemyPointers:
 
 
 brinstarMemDiff = zones[ZoneType.BRINSTAR].memoryDiff()
-print ("%x" % (ofs - 0x8000 - brinstarMemDiff))
 
-btsStr = fileContent[ofs : ofs + 0x10]
-numBts = len(btsStr)
-bts = struct.unpack("B" * numBts, btsStr)
-print (" ".join(["%02x" % x for x in bts]))
+hexdumpval = 0x19DB0 #- zoneMemoryOffsets["brinstar"]
+dasmval = 0x9Da0
 
+#print ()
 
-print ("total address space: 0x%x" % len(fileContent))
+print ("0x%x" % (hexdumpval - dasmval  - brinstarMemDiff))
+
+#print ("%x" % (ofs - 0x8000 - brinstarMemDiff))
+
+#btsStr = fileContent[ofs : ofs + 0x10]
+#numBts = len(btsStr)
+#bts = struct.unpack("B" * numBts, btsStr)
+
+#print (" ".join(["%02x" % x for x in bts]))
+
+#print ("total address space: 0x%x" % len(fileContent))
+
 #print (" ".join(["%02x" % x for x in brinstarRoomPointerValues[0x17]]))
-
-
 #print (" ".join(["%02x" % x for x in roomData]))
 
 
