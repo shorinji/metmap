@@ -59,7 +59,7 @@ class Room:
 			elif highNibble == 0xA:
 				side = "right"
 			else:
-				print "unknown door data (02 %02x)" % doorByte
+				print ("unknown door data (02 %02x)" % doorByte)
 				continue
 
 			self.doors.append({"side": side, "type": doorType })

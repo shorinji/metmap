@@ -1,30 +1,34 @@
 import sys
 import struct
 
-from MetroidRoom import *
+from MetroidRoom import Room
+from MetroidZone import *
 
 overallMapBaseStart = 0x254E
 overallMapBaseEnd = 0x256D
 
-zoneMemoryOffsets = {
-	'brinstar': 0x3FF0,
-	'norfair': -0x10,
-	'tourian': -0x4010,
-	'kraid':    0x7FF0,
-	'ridley':   0x3FF0
-}
 
+zones = {
+	ZoneType.BRINSTAR: 	ZoneFactory.get(ZoneType.BRINSTAR),
+	ZoneType.NORFAIR: 	ZoneFactory.get(ZoneType.NORFAIR),
+	ZoneType.TOURIAN: 	ZoneFactory.get(ZoneType.TOURIAN),
+	ZoneType.KRAID: 	ZoneFactory.get(ZoneType.KRAID),
+	ZoneType.RIDLEY: 	ZoneFactory.get(ZoneType.RIDLEY)
+}
 
 ######################################
 
 def unpackPointer(offset, zone):
+	if not zone in zones:
+		raise ValueError ("Invalid argument: zone")
+
 	data = fileContent[offset:offset + 2]
 	parts = struct.unpack("BB", data)
 
 	lowByte = parts[0]
 	highByte = parts[1]
 
-	return lowByte + (highByte * 0x100) - zoneMemoryOffsets[zone]
+	return lowByte + (highByte * 0x100) - zones[zone].memoryDiff()
 
 
 def printBrinstarRoom(roomId):
@@ -41,24 +45,23 @@ def printBrinstarRoom(roomId):
 
 	room = brinstarRooms[roomId]
 
-	print "Room[%02x] (bytes)" % roomId
+	print ("Room[%02x] (bytes)" % roomId)
 
 	if 1 == 1:
-		print " data (%d):" % roomNumBytes	
+		print (" data (%d):" % roomNumBytes	)
 		for i in range(roomNumBytes):
-			print (" %02x" % roomBytes[i]),
+			print (" %02x" % roomBytes[i], end="")
 			if i == 0 or i == 16:
-				print ""
+				print ("")
 			if roomBytes[i] == 0xfd:
-				print "\n"
-		print ""
+				print ("\n")
+		print ("")
 
-	print " struct (%d):" % structureNumBytes,
-	print " %d macros:" % structureBytes[0], "",
-	print ", ".join("%02x" % b for b in structureBytes[1: structureNumBytes - 1])
-	print ""
-
-	print room
+	print (" struct (%d):" % structureNumBytes,)
+	print (" %d macros:" % structureBytes[0], end=" ")
+	print (", ".join("%02x" % b for b in structureBytes[1: structureNumBytes - 1]))
+	print ("")
+	print (room)
 
 
 ######################################
@@ -69,7 +72,7 @@ with open("metroid.nes", "rb") as file:
 	fileContent = file.read()
 
 if fileContent is None:
-	print "Failed to read metroid.nes"
+	print ("Failed to read metroid.nes")
 	sys.exit(0)
 
 ###################################### load overall map
@@ -89,7 +92,7 @@ for offset in range(32):
 	mapDataRowOffsets.append(addressSpan)
 	bytesRead += ((end + 1) - start)
 
-print "Read %d bytes in total" % bytesRead
+print ("Read %d bytes in total" % bytesRead)
 
 
 	
@@ -114,11 +117,10 @@ for offsets in mapDataRowOffsets:
 blankRoom = '   '
 
 for i in range(32):
-	print ("%03d: " % i),
 	row = "".join([("%02x " % idx) if (idx < 255) else blankRoom for idx in mapDataRows[i]])
-	#row = "".join([("%02x " % idx) for idx in mapDataRows[i]])
 	row += " %d B" % len(mapDataRows[i])
-	print row
+	print ("%03d: " % i, end="")
+	print (row)
 
 
 
@@ -144,20 +146,16 @@ brinstarRooms = []
 offsetIndex = 0
 for offset in brinstarRoomPointerOffsets:
 
-	roomPointer = unpackPointer(offset, 'brinstar')
-
+	roomPointer = unpackPointer(offset, ZoneType.BRINSTAR)
 	#print "room[%02x] (%x - %x) => %X" % (offsetIndex, offset, offset + 1, roomPointer)
-
 	brinstarRoomPointerValues.append(roomPointer)
 	offsetIndex += 1
 
 # load brinstar object/structure
 offsetIndex = 0
 for offset in brinstarStructureObjectOffsets:
-	structurePointer = unpackPointer(offset, 'brinstar')
-	
+	structurePointer = unpackPointer(offset, ZoneType.BRINSTAR)
 	#print "struct[%02x] (%x - %x) => %X" % (offsetIndex, offset, offset + 1, structurePointer)
-
 	brinstarStructureData.append(structurePointer)
 	offsetIndex += 1
 
@@ -170,7 +168,6 @@ for offsets in brinstarRoomPointers:
 	roomBytes = end - start
 
 	data = fileContent[start:end]
-	
 	roomData = struct.unpack("B" * roomBytes, data)
 
 	room = Room()
@@ -188,15 +185,16 @@ printBrinstarRoom(9)
 # 0x19DB0
 ofs = 0x19DB0 #- zoneMemoryOffsets["brinstar"]
 
-print "%x" % (ofs - 0x8000 - zoneMemoryOffsets["brinstar"])
+brinstarMemDiff = zones[ZoneType.BRINSTAR].memoryDiff()
+print ("%x" % (ofs - 0x8000 - brinstarMemDiff))
 
 btsStr = fileContent[ofs : ofs + 0x10]
 numBts = len(btsStr)
 bts = struct.unpack("B" * numBts, btsStr)
-print " ".join(["%02x" % x for x in bts])
+print (" ".join(["%02x" % x for x in bts]))
 
 
-print "total address space: 0x%x" % len(fileContent)
+print ("total address space: 0x%x" % len(fileContent))
 #print (" ".join(["%02x" % x for x in brinstarRoomPointerValues[0x17]]))
 
 
