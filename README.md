@@ -25,8 +25,8 @@ TODO
 Further reading 
 ---------------
 
-These are the best sources I have found to understand the structure of the metroid rom:
-Still some info I am missing so far though ... 
+These are the best sources I have found to understand the structure of the metroid rom.
+Still missing some info about how tiles/chr are loaded... 
 
 * https://datacrystal.romhacking.net/wiki/Metroid:ROM_map
 * https://datacrystal.romhacking.net/wiki/Metroid:Item_data_format
