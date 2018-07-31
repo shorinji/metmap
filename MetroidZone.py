@@ -9,7 +9,12 @@ class ZoneType(Enum):
 
 
 class Zone:
-	zoneMemoryOffsets = {
+	# From https://datacrystal.romhacking.net/wiki/Metroid:Pointer_format :
+	# These values account for 
+	#  (A) the fact that data is banked into RAM at $8000, 
+	#  (B) the 16-byte ROM header, and 
+	#  (C) the ROM bank the data is contained in.
+	memoryBankDiffs = {
 		ZoneType.BRINSTAR: 0x3FF0,
 		ZoneType.NORFAIR: -0x10,
 		ZoneType.TOURIAN: -0x4010,
@@ -18,15 +23,13 @@ class Zone:
 	}
 
 	def __init__(self, type):
-		print (type)
 		if type in ZoneType:
-			print ("yes")
 			self.type = type
 		else:
-			print ("no")
+			raise ValueError ("Zone(): Invalid type specified")
 
 	def memoryDiff(self):
-		return self.zoneMemoryOffsets[self.type]
+		return self.memoryBankDiffs[self.type]
 
 
 class ZoneFactory:
