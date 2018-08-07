@@ -1,5 +1,8 @@
 import sys
 import struct
+import pygame
+from pygame.locals import *
+
 
 from INES import Header
 from MetroidRoom import Room
@@ -7,6 +10,14 @@ from MetroidZone import *
 
 overallMapBaseStart = 0x254E
 overallMapBaseEnd = 0x256D
+
+macroDefs = {
+	ZoneType.BRINSTAR: 	{ "offset":  0x6F00, "len": 260, "table": None },
+	ZoneType.NORFAIR: 	{ "offset":  0xAEFC, "len": 248, "table": None },
+	ZoneType.TOURIAN: 	{ "offset":  0xEE59, "len": 216, "table": None },
+	ZoneType.KRAID:   	{ "offset": 0x12C42, "len": 164, "table": None },
+	ZoneType.RIDLEY:    { "offset": 0x16B33, "len": 132, "table": None }
+}
 
 
 zones = {
@@ -18,6 +29,22 @@ zones = {
 }
 
 ######################################
+
+def loadMacroTable(zone):
+	if not zone in macroDefs:
+		raise ValueError("Invalid zone specified")
+
+	if fileContent is None:
+		raise ValueError("rom file must be loaded before macros can be loaded")
+
+	macroDefsEntry = macroDefs[zone]
+	macrosOffset = macroDefsEntry["offset"]
+	macrosLen = macroDefsEntry["len"]
+	data = fileContent[macrosOffset : macrosOffset + macrosLen ]
+	macros = struct.unpack("B" * macrosLen, data)
+	macroDefsEntry["table"] = macros
+
+
 
 def unpackPointer(offset, zone):
 	if not zone in zones:
@@ -42,21 +69,20 @@ def printBrinstarRoom(roomId):
 	structureNumBytes = brinstarStructureData[roomId + 1] - structureOffset
 	structureBytes = struct.unpack("B" * structureNumBytes, fileContent[structureOffset : structureOffset + structureNumBytes ])
 
-	print ("Room[%02x] (bytes)" % roomId)
+	print ("Room[%02x]:" % roomId)
 
 	if 1 == 1:
-		print (" data (%d):" % roomNumBytes	)
+		print (" room pointer data (%d):" % roomNumBytes	)
 		for i in range(roomNumBytes):
 			print (" %02x" % roomBytes[i], end="")
-			if i == 0 or i == 16:
-				print ("")
 			if roomBytes[i] == 0xfd:
-				print ("\n")
+				print ("")
 		print ("")
 
-	print (" struct (%d):" % structureNumBytes, end="")
-	print (" %d macros:" % structureBytes[0], end=" ")
+	print (" structure (%dB):" % structureNumBytes)
+	print ("  macros (%d):" % structureBytes[0], end=" ")
 	print (", ".join("%02x" % b for b in structureBytes[1: structureNumBytes - 1]))
+	# multiply macro num * 4 to find index in MacroTbl	
 	print ("")
 	print (brinstarObjectDoorEnemies[roomId])
 
@@ -68,6 +94,74 @@ def printWholeMap():
 		print ("%03d: " % i, end="")
 		print (row)
 
+
+# loop over 16 bytes to unpack one 8x8 pixel tile
+def unpackTilePixels(offset):
+
+	tileBytes = fileContent[offset : offset + 16]
+
+	tilePixels = []
+	for i in range(8):
+
+		byte1 = tileBytes[i]
+		byte2 = tileBytes[i + 8]
+
+		bits0 = ((byte1 & 0b10000000) >> 6) | ((byte2 & 0b10000000) >> 7)
+		bits1 = ((byte1 & 0b01000000) >> 5) | ((byte2 & 0b01000000) >> 6)
+		bits2 = ((byte1 & 0b00100000) >> 4) | ((byte2 & 0b00100000) >> 5)
+		bits3 = ((byte1 & 0b00010000) >> 3) | ((byte2 & 0b00010000) >> 4)
+		bits4 = ((byte1 & 0b00001000) >> 2) | ((byte2 & 0b00001000) >> 3)
+		bits5 = ((byte1 & 0b00000100) >> 1) | ((byte2 & 0b00000100) >> 2)
+		bits6 = ((byte1 & 0b00000010)     ) | ((byte2 & 0b00000010) >> 1)
+		bits7 = ((byte1 & 0b00000001) << 1) | ((byte2 & 0b00000001))
+
+		tilePixels.extend([bits0, bits1, bits2, bits3, bits4, bits5, bits6, bits7])
+
+	return tilePixels
+
+
+def unpackTiles(baseAddress, numBytes):
+	numTiles = int(numBytes / 16)
+	tiles = {}
+	byteIndex = 0
+	for tileIndex in range(numTiles):
+		tiles[tileIndex] = unpackTilePixels(baseAddress + byteIndex)		
+		byteIndex += 16
+	return tiles
+
+
+
+def drawScaledPixel(outputBaseX, outputBaseY, color, scale, surface):
+	# scale up and draw
+	for yOffset in range(scale):
+		for xOffset in range(scale):
+			pos = (outputBaseX + xOffset, outputBaseY + yOffset)
+			surface.set_at(pos, color)
+
+
+# draws a tile scaled onto a surface
+def drawTile(tileData, surface):
+
+	scale = blitTileScale
+
+	s = ""
+	# for each vertical and horizontal pixel in tile
+	for y in range(tileLength):
+		for x in range(tileLength):
+
+			colorIndex = tileData[(tileLength * y) + x]
+
+			# get pixel color
+			color = myPalette[colorIndex]
+			
+			#s += ("%X " % colorIndex)
+			outputBaseX = (x * scale)
+			outputBaseY = (y * scale)
+
+			drawScaledPixel(outputBaseX, outputBaseY, color, scale, surface)
+		#s += "\n"
+
+	#print (s)
 
 ############################################################################
 ############################################################################
@@ -82,9 +176,12 @@ if fileContent is None:
 	sys.exit(0)
 
 
-inesHeader = Header(fileContent)
+for zone in zones.keys():
+	loadMacroTable(zone)
 
-print(inesHeader)
+nesRomHeader = Header(fileContent)
+
+#print(nesRomHeader)
 
 
 mapDataRowOffsets = []
@@ -116,12 +213,10 @@ brinstarRoomPointerBase = 0x6324
 brinstarRoomPointerNum = 47
 brinstarRoomPointerValues = []
 
-for offsetIndex in range(brinstarRoomPointerNum):
-	offset = brinstarRoomPointerBase + (2 * offsetIndex)
+for roomOffset in range(0, brinstarRoomPointerNum * 2, 2):
+	offset = brinstarRoomPointerBase + roomOffset
 	roomPointer = unpackPointer(offset, ZoneType.BRINSTAR)
 	brinstarRoomPointerValues.append(roomPointer)
-	#print ("room[%02x] (%x - %x) => %X" % (offsetIndex, offset, offset + 1, roomPointer))
-	offsetIndex += 1
 
 
 # load brinstar structure - structure / object pointers
@@ -129,12 +224,11 @@ brinstarStructureObjectBase = 0x6382
 brinstarStructurePointersNum = 50
 brinstarStructureData = []
 
-for offsetIndex in range(brinstarStructurePointersNum):
-	offset = brinstarStructureObjectBase + (2 * offsetIndex)
+for structureOffset in range(0, brinstarStructurePointersNum * 2, 2):
+	offset = brinstarStructureObjectBase + structureOffset
 	structurePointer = unpackPointer(offset, ZoneType.BRINSTAR)
 	brinstarStructureData.append(structurePointer)
-	#print ("struct[%02x] (%x - %x) => %X" % (offsetIndex, offset, offset + 1, structurePointer))
-	offsetIndex += 1
+
 
 # load brinstar objects / doors / enemies
 
@@ -144,42 +238,201 @@ brinstarObjectDoorEnemiesNum = 47
 brinstarObjectDoorEnemies = []
 
 offsetIndex = 0
+odePtrs = []
 for offsets in brinstarObjectDoorEnemyPointers:
 	start = offsets[0]
 	end = offsets[1]
-	roomBytes = end - start
-
+	roomNumBytes = end - start
+	odePtrs.append((start, end))
 	data = fileContent[start:end]
-	roomData = struct.unpack("B" * roomBytes, data)
+	roomData = struct.unpack("B" * roomNumBytes, data)
 
 	room = Room()
-	room.unpackRoom(roomData)
-
+	room.unpackRoom(offsetIndex, roomData)
 	brinstarObjectDoorEnemies.append(room)
 
 	offsetIndex += 1
 
-
-# printWholeMap()
-
-#for roomId in range(0x17, 0x18):
-#printBrinstarRoom(9)
-#printBrinstarRoom(0x17)
-
-# According to gfx disassembly writeup, the brinstar tiles should be located at 0x9DA0
-# A hexdump shows the same data actually in the rom on address 0x19DB0
-# so what is the equation?
-
+printBrinstarRoom(9)
 
 brinstarMemDiff = zones[ZoneType.BRINSTAR].memoryDiff()
 
-hexdumpval = 0x19DB0 #- zoneMemoryOffsets["brinstar"]
-dasmval = 0x9Da0
+#hexdumpval = 0x19DB0 #- zoneMemoryOffsets["brinstar"]
+#dasmval = 0x9Da0
 
 #print ()
 
-print ("0x%x" % (hexdumpval - dasmval  - brinstarMemDiff))
+#room9addr = 0x65C9
+#room9size = 0x23
+#data = fileContent[room9addr : room9addr + room9size]
+#room9bytes = struct.unpack("B" * room9size, data)
+#print ("Number 9:", " ".join(["%02x" % x for x in room9bytes]))
 
+
+
+
+
+#print ("Macros:")
+#currentAddr = macrosOffset
+#for b in macros:
+#	if currentAddr % 4 == 0:
+#		print ("\n%04X: " % (currentAddr), end="")
+#	print ("%02X " % b, end="")
+#	currentAddr += 1
+#print("")
+
+
+
+
+
+#print("macros:")
+
+room9structOffset = brinstarStructureData[9]
+room9numBytes = brinstarStructureData[10] - room9structOffset
+structBytes = fileContent[room9structOffset + 1 : room9structOffset + room9numBytes - 1]
+
+macrosBS = macroDefs[ZoneType.BRINSTAR]["table"] 
+
+for b in structBytes:
+	i = b * 4
+	macroValues = macrosBS[i : i + 4]
+	#print ((" [%02x] tiles: [" % b), (", ".join(["%02X" % x for x in macroValues])), "]")
+
+# According to gfx disassembly, the brinstar tiles should be at 0x9DA0, but a hexdump shows the 
+# same data actually in the rom file on address 0x19DB0
+# So add this to addresses below to find actual data:
+gfxOffset = 0x10010
+
+
+# addresses from disassembly
+samusAndGearPatternsStart 		= 0x8000
+samusAndGearPatternsEnd 		= 0x89A0
+
+introAndEndTilePatternsStart 	= 0x89A0
+introAndEndTilePatternsEnd 		= 0x8AA0
+
+titleScreenTilePatternsStart 	= 0x8BE0
+titleScreenTilePatternsEnd 		= 0x90E0
+
+suitlessSamusTilePatternsStart 	= 0x90E0
+suitlessSamusTilePatternsEnd 	= 0x98F0
+
+exclamationPointTileStart 		= 0x9890
+exclamationPointTileEnd 		= 0x98A0
+
+brinstarRoomTilePatternsStart 	= 0x9DA0
+brinstarRoomTilePatternsEnd 	= 0xA700
+
+norfairRoomTilePatternsStart 	= 0xA6F0
+norfairRoomTilePatternsEnd 		= 0xA9C0
+
+tourianRoomTilePatternsStart 	= 0xA9C0
+tourianRoomTilePatternsEnd 		= 0xB4B0
+
+fontsTilePatternsStart 			= 0xB4C0
+fontsTilePatternsEnd 			= 0xB8C0
+
+
+addr = brinstarRoomTilePatternsStart + gfxOffset
+numTileBytes = brinstarRoomTilePatternsEnd - brinstarRoomTilePatternsStart
+
+#addr = samusAndGearPatternsStart + gfxOffset
+#numTileBytes = fontsTilePatternsEnd - samusAndGearPatternsStart
+
+
+unpackedTiles = unpackTiles(addr, numTileBytes)
+
+
+scale = 2
+
+
+WIDTH = 256 	# in original pixels = 32 8px tiles
+HEIGHT = 240 	# in original pixels = 30 8px tiles
+
+
+WINDOW_WIDTH = WIDTH * scale
+WINDOW_HEIGHT = HEIGHT * scale
+
+# window is actually displayed as 1024x960 on my osx, probably due to some "smart GUI scaling"
+
+pygame.init()
+print(pygame.display.Info())
+
+pygame.display.init()
+screen = pygame.display.set_mode([WINDOW_WIDTH, WINDOW_HEIGHT], SWSURFACE | DOUBLEBUF)
+
+print("Window should have size %d x %d" % (WINDOW_WIDTH, WINDOW_HEIGHT))
+print("And get: ", screen.get_size())
+print("wm: ", pygame.display.get_wm_info())
+
+tileLength = 8
+tileSize = (tileLength, tileLength)
+
+blitTileScale = scale 
+
+tileLengthScaled = tileLength * blitTileScale
+tileSizeScaled = (tileLengthScaled, tileLengthScaled)
+
+blitSource = pygame.Surface(tileSizeScaled)
+blitDestBase = pygame.Rect((0,0), tileSizeScaled)
+
+colorBackground = Color("red")
+
+shouldRenderMap = True
+#print ("blitSource size is %d x %d" % (blitSource.get_width(), blitSource.get_height()))
+
+#print ("brinstar data starts:")
+#print (" ".join(["%02X" % x for x in gfxBytes[:10]]))
+
+# black, cyan, dark blue, dark sea grean
+# dark blue: 		Color(0x1b2cf0)
+# cyan: 			Color(0x5991ff)
+# dark sea green: 	Color(0x008089)
+myPalette = [Color(0), Color(0x1b2cf0ff), Color(0x5991ffff) , Color(0x008089FF)]
+
+while 1:
+	for event in pygame.event.get():
+		if event.type == QUIT:
+			sys.exit(0)
+
+	if shouldRenderMap:
+		tileIndex = 0
+		for y in range(30):
+			for x in range(0, 32, 1):
+				# draw tile at position (x, y)
+
+				if tileIndex >= len(unpackedTiles):
+					tileIndex = 0
+
+				tile = unpackedTiles[tileIndex]
+
+				#print ("%d items in tile" % len(tile))
+
+				blitSource.fill(colorBackground)
+				drawTile(tile, blitSource)
+
+				blitDest = blitDestBase.move(x * tileLengthScaled, y * tileLengthScaled)
+
+				#if x == 1 and y == 1:
+				#	print ("scaled output x,y = (%d, %d)" % (x * tileLengthScaled, y * tileLengthScaled))
+				#	print ("blitDest (width,height) = (%d x %d)" % (blitDest.width, blitDest.height))
+				#	print ("last pixel drawn is (%d, %d)" % (blitTileScale - 1, blitTileScale - 1))
+				#	print ("blitDest (x,y) = (%d, %d)" % (blitDest.left, blitDest.top))
+				screen.blit(blitSource, blitDest)
+
+				#pygame.draw.rect(screen, Color("blue"), Rect(x * tileLengthScaled, y * tileLengthScaled, tileLengthScaled, tileLengthScaled), 1)
+				#screen.(tileFrameRect, blitDest)
+
+				tileIndex += 1
+	else:
+		screen.fill(colorBackground)
+		blitSource.fill(Color("blue"))
+		blitDest = blitDestBase.move(100, 100)
+		screen.blit(blitSource, blitDest)
+
+	pygame.display.flip()
+	pygame.time.delay(500)
+#print ("0x%x" % (hexdumpval - dasmval  - brinstarMemDiff))
 #print ("%x" % (ofs - 0x8000 - brinstarMemDiff))
 
 #btsStr = fileContent[ofs : ofs + 0x10]
@@ -187,10 +440,9 @@ print ("0x%x" % (hexdumpval - dasmval  - brinstarMemDiff))
 #bts = struct.unpack("B" * numBts, btsStr)
 
 #print (" ".join(["%02x" % x for x in bts]))
-
 #print ("total address space: 0x%x" % len(fileContent))
-
 #print (" ".join(["%02x" % x for x in brinstarRoomPointerValues[0x17]]))
 #print (" ".join(["%02x" % x for x in roomData]))
+
 
 

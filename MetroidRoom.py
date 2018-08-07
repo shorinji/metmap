@@ -6,7 +6,7 @@ class Room:
 		self.roomObjects = []
 
 
-	def unpackRoom(self, roomData):
+	def unpackRoom(self, offsetIndex, roomData):
 		roomBytes = len(roomData)
 
 		index = 0
@@ -86,14 +86,14 @@ class Room:
 			x = pos & 0xF
 			y = pos >> 4
 			s += "  [%d] " % i
-			s += " tile: (%2d, %2d), ptr: 0x%02x, attribute: %2x\n" % (x, y, ptr, attr)
+			s += " tile: (%2d, %2d), obj: 0x%02x, palette: %2x\n" % (x, y, ptr, attr)
 			i += 1
 
 		return s
 
 	def __repr__(self):
-		s = " colorAttribute: %d\n" % self.colorAttribute
-		s += " objects:\n"
+		s = " room palette: %d\n" % self.colorAttribute
+		s += " room objects:\n"
 		s += self.roomObjectsToString()
 		#s += " ".join([self.oneObjectToString(obj) for obj in self.roomObjects]) 
 		s += "\n"
