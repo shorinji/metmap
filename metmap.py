@@ -3,11 +3,11 @@ import struct
 import pygame
 from pygame.locals import *
 
-
 from INES import Header
 from MetroidRoom import Room
 from MetroidZone import *
-
+from MetroidBrinstar import *
+from ZoneFactory import ZoneFactory
 overallMapBaseStart = 0x254E
 overallMapBaseEnd = 0x256D
 
@@ -28,6 +28,13 @@ zones = {
 	ZoneType.RIDLEY: 	ZoneFactory.get(ZoneType.RIDLEY)
 }
 
+# black, cyan, dark blue, dark sea grean
+# dark blue: 		Color(0x1b2cf0)
+# cyan: 			Color(0x5991ff)
+# dark sea green: 	Color(0x008089)
+boringBrinstarPalette = [Color(0), Color(0X1B2CF0FF), Color(0X5991FFFF) , Color(0X008089FF)]
+
+
 ######################################
 
 def loadMacroTable(zone):
@@ -44,6 +51,9 @@ def loadMacroTable(zone):
 	macros = struct.unpack("B" * macrosLen, data)
 	macroDefsEntry["table"] = macros
 
+	if zone == ZoneType.BRINSTAR:
+		print("BRINSTAR MACROS:")
+		print(macroDefsEntry["table"])
 
 
 def unpackPointer(offset, zone):
@@ -65,8 +75,8 @@ def printBrinstarRoom(roomId):
 	roomNumBytes = brinstarRoomPointerValues[roomId + 1] - roomDataOffset
 	roomBytes = struct.unpack("B" * roomNumBytes, fileContent[roomDataOffset : roomDataOffset + roomNumBytes ])
 
-	structureOffset = brinstarStructureData[roomId]
-	structureNumBytes = brinstarStructureData[roomId + 1] - structureOffset
+	structureOffset = brinstarStructurePointers[roomId]
+	structureNumBytes = brinstarStructurePointers[roomId + 1] - structureOffset
 	structureBytes = struct.unpack("B" * structureNumBytes, fileContent[structureOffset : structureOffset + structureNumBytes ])
 
 	print ("Room[%02x]:" % roomId)
@@ -148,20 +158,36 @@ def drawTile(tileData, surface):
 	# for each vertical and horizontal pixel in tile
 	for y in range(tileLength):
 		for x in range(tileLength):
-
-			colorIndex = tileData[(tileLength * y) + x]
-
-			# get pixel color
-			color = myPalette[colorIndex]
 			
-			#s += ("%X " % colorIndex)
+			colorIndex = tileData[(tileLength * y) + x]
+			color = boringBrinstarPalette[colorIndex]
+			
 			outputBaseX = (x * scale)
 			outputBaseY = (y * scale)
 
 			drawScaledPixel(outputBaseX, outputBaseY, color, scale, surface)
-		#s += "\n"
 
-	#print (s)
+
+def printBrinstarStructure(roomId=None):
+
+	for i in range(len(brinstarStructurePointers)):
+		if (not roomId is None) and not roomId == i:
+			continue
+
+		print ("struct[%02x]: " % i, end=" ")
+
+		currentOffset = 0
+		ptr = brinstarStructurePointers[i]
+		bt = fileContent[ptr + currentOffset]
+
+		while not bt == 0xFF:
+			print ("%02x" % bt, end=" ")
+
+			currentOffset += 1
+			ptr = brinstarStructurePointers[i]
+			bt = fileContent[ptr + currentOffset]
+		print("FF")
+
 
 ############################################################################
 ############################################################################
@@ -180,9 +206,7 @@ for zone in zones.keys():
 	loadMacroTable(zone)
 
 nesRomHeader = Header(fileContent)
-
 #print(nesRomHeader)
-
 
 mapDataRowOffsets = []
 mapDataRows = []
@@ -222,13 +246,15 @@ for roomOffset in range(0, brinstarRoomPointerNum * 2, 2):
 # load brinstar structure - structure / object pointers
 brinstarStructureObjectBase = 0x6382
 brinstarStructurePointersNum = 50
-brinstarStructureData = []
+brinstarStructurePointers = []
 
 for structureOffset in range(0, brinstarStructurePointersNum * 2, 2):
 	offset = brinstarStructureObjectBase + structureOffset
 	structurePointer = unpackPointer(offset, ZoneType.BRINSTAR)
-	brinstarStructureData.append(structurePointer)
+	brinstarStructurePointers.append(structurePointer)
 
+
+#printBrinstarStructure()
 
 # load brinstar objects / doors / enemies
 
@@ -271,7 +297,6 @@ brinstarMemDiff = zones[ZoneType.BRINSTAR].memoryDiff()
 
 
 
-
 #print ("Macros:")
 #currentAddr = macrosOffset
 #for b in macros:
@@ -281,22 +306,27 @@ brinstarMemDiff = zones[ZoneType.BRINSTAR].memoryDiff()
 #	currentAddr += 1
 #print("")
 
+# brinstar structure data is normally between 6C94 and 6EFF
+room9structOffset = brinstarStructurePointers[9]
+room9numBytes = brinstarStructurePointers[10] - room9structOffset
+room9structBytes = fileContent[room9structOffset + 1 : room9structOffset + room9numBytes - 1]
+
+print("room9 structure bytes: %d" % room9numBytes)
+brinstarMacros = macroDefs[ZoneType.BRINSTAR]["table"] 
+
+room9macros = {}
+print("macros:")
+i = 0
+for structByte in room9structBytes:
+	macroIndex = structByte * 4
+	macroValues = brinstarMacros[macroIndex : macroIndex + 4]
+	print (("[%x] [%02x] tiles: [" % (i, structByte)), (", ".join(["%02X" % x for x in macroValues])), "]")
+	room9macros[structByte] = macroValues
+	i += 1
 
 
 
-
-#print("macros:")
-
-room9structOffset = brinstarStructureData[9]
-room9numBytes = brinstarStructureData[10] - room9structOffset
-structBytes = fileContent[room9structOffset + 1 : room9structOffset + room9numBytes - 1]
-
-macrosBS = macroDefs[ZoneType.BRINSTAR]["table"] 
-
-for b in structBytes:
-	i = b * 4
-	macroValues = macrosBS[i : i + 4]
-	#print ((" [%02x] tiles: [" % b), (", ".join(["%02X" % x for x in macroValues])), "]")
+# TILES
 
 # According to gfx disassembly, the brinstar tiles should be at 0x9DA0, but a hexdump shows the 
 # same data actually in the rom file on address 0x19DB0
@@ -321,7 +351,7 @@ exclamationPointTileStart 		= 0x9890
 exclamationPointTileEnd 		= 0x98A0
 
 brinstarRoomTilePatternsStart 	= 0x9DA0
-brinstarRoomTilePatternsEnd 	= 0xA700
+brinstarRoomTilePatternsEnd 	= 0xA6F0
 
 norfairRoomTilePatternsStart 	= 0xA6F0
 norfairRoomTilePatternsEnd 		= 0xA9C0
@@ -343,6 +373,9 @@ numTileBytes = brinstarRoomTilePatternsEnd - brinstarRoomTilePatternsStart
 unpackedTiles = unpackTiles(addr, numTileBytes)
 
 
+#room9tiles = [[25] * 32] * 30
+#print(room9tiles)
+
 scale = 2
 
 
@@ -356,14 +389,14 @@ WINDOW_HEIGHT = HEIGHT * scale
 # window is actually displayed as 1024x960 on my osx, probably due to some "smart GUI scaling"
 
 pygame.init()
-print(pygame.display.Info())
+#print(pygame.display.Info())
 
 pygame.display.init()
 screen = pygame.display.set_mode([WINDOW_WIDTH, WINDOW_HEIGHT], SWSURFACE | DOUBLEBUF)
 
-print("Window should have size %d x %d" % (WINDOW_WIDTH, WINDOW_HEIGHT))
-print("And get: ", screen.get_size())
-print("wm: ", pygame.display.get_wm_info())
+#print("Window should have size %d x %d" % (WINDOW_WIDTH, WINDOW_HEIGHT))
+#print("And get: ", screen.get_size())
+#print("wm: ", pygame.display.get_wm_info())
 
 tileLength = 8
 tileSize = (tileLength, tileLength)
@@ -376,73 +409,143 @@ tileSizeScaled = (tileLengthScaled, tileLengthScaled)
 blitSource = pygame.Surface(tileSizeScaled)
 blitDestBase = pygame.Rect((0,0), tileSizeScaled)
 
-colorBackground = Color("red")
+colorBackground = Color("brown")
 
 shouldRenderMap = True
-#print ("blitSource size is %d x %d" % (blitSource.get_width(), blitSource.get_height()))
 
-#print ("brinstar data starts:")
-#print (" ".join(["%02X" % x for x in gfxBytes[:10]]))
+room9objectsEtc = brinstarObjectDoorEnemies[9].getRoomObjects()
+#print(room9objectsEtc)
 
-# black, cyan, dark blue, dark sea grean
-# dark blue: 		Color(0x1b2cf0)
-# cyan: 			Color(0x5991ff)
-# dark sea green: 	Color(0x008089)
-myPalette = [Color(0), Color(0x1b2cf0ff), Color(0x5991ffff) , Color(0x008089FF)]
+
+room9tiles = []
+for y in range(30):
+	row = []
+	for x in range(32):
+		row.append(0)
+	room9tiles.append(row)
+
+	#print(room9tiles)
+
+	#room9tiles[  y  ][  x  ] = macroBase
+	#room9tiles[  y  ][x + 1] = macroBase + 1
+	#room9tiles[y + 1][  x  ] = macroBase + 2
+	#room9tiles[y + 1][x + 1] = macroBase + 3
+
+printBrinstarStructure(9)
+
+
+#i = 11
+#room9tiles[3][0] = 0xff
+#room9tiles[  10  ][  10  ] = i + 3
+#room9tiles[  10  ][10 + 1] = i + 2
+#room9tiles[10 + 1][  10  ] = i + 1
+#room9tiles[10 + 1][10 + 1] = i
+
+#print(room9tiles)
+#sys.exit()
+	#print ("obj %x at tile (%d,%d)" % (obj[1], x, y))
+
+
 
 while 1:
 	for event in pygame.event.get():
 		if event.type == QUIT:
 			sys.exit(0)
 
+	screen.fill(Color("blue"))
+
 	if shouldRenderMap:
 		tileIndex = 0
+		s = ""
 		for y in range(30):
-			for x in range(0, 32, 1):
+			for x in range(32):
+
 				# draw tile at position (x, y)
 
-				if tileIndex >= len(unpackedTiles):
-					tileIndex = 0
+				# 1. find tile to draw
 
+				# top-left, top-right, bottom-left, and bottom-right
+
+				tileIndex = room9tiles[y][x]
+
+				s += "%02x " % tileIndex
+
+				#m = room9macros[0x8]
+
+				#mBase = (1 * 16) + 5
+				#m = [mBase, mBase + 1, mBase + 2, mBase + 3]
+
+				#if   x == 10 and y == 10:		tileIndex = m[0]
+				#elif x == 11 and y == 10:		tileIndex = m[1]
+				#elif x == 10 and y == 11:		tileIndex = m[2]
+				#elif x == 11 and y == 11:		tileIndex = m[3]
+				#else:							continue
+
+				#print("[%d][%d] = 0x%x" % (x, y, tileIndex))
+				#xm = x % 2
+				#ym = y % 2
+				
+				#topLeft 	= (xm == 0 and ym == 0)
+				#bottomLeft 	= (xm == 0 and ym == 1)
+				#topRight 	= (xm == 1 and ym == 0)
+				#bottomRight	= (xm == 1 and ym == 1)
+
+				#if topLeft:
+				#	tileIndex = m[0]
+				#elif bottomLeft:
+				#	tileIndex = m[1]
+				#elif topRight:
+				#	tileIndex = m[2]
+				#else:
+				#	tileIndex = m[3]
+
+
+				# room9tiles[y][x]
+
+				#for b in room9structBytes:
+				#	i = b * 4
+				#	macroValues = brinstarMacros[i : i + 4]
+				#	print ((" [%02x] tiles: [" % b), (", ".join(["%02X" % x for x in macroValues])), "]")
+				#	room9macros[b] = macroValues
+
+
+				#print("tile: %d" % tileIndex)
+
+				if tileIndex >= len(unpackedTiles):
+					#print("tileIndex=0x%x out of bounds!" % tileIndex)
+					#tileIndex = 0
+					continue
+
+				if tileIndex == 0:
+					#tileIndex = 1
+					continue
+
+
+				# 2. find pixels for tile
 				tile = unpackedTiles[tileIndex]
 
-				#print ("%d items in tile" % len(tile))
 
+				# 3. clear surface used for tile drawing
 				blitSource.fill(colorBackground)
+				
+				# 4. draw the tile
 				drawTile(tile, blitSource)
-
 				blitDest = blitDestBase.move(x * tileLengthScaled, y * tileLengthScaled)
-
-				#if x == 1 and y == 1:
-				#	print ("scaled output x,y = (%d, %d)" % (x * tileLengthScaled, y * tileLengthScaled))
-				#	print ("blitDest (width,height) = (%d x %d)" % (blitDest.width, blitDest.height))
-				#	print ("last pixel drawn is (%d, %d)" % (blitTileScale - 1, blitTileScale - 1))
-				#	print ("blitDest (x,y) = (%d, %d)" % (blitDest.left, blitDest.top))
+				
+				# 5. update screen buffer
 				screen.blit(blitSource, blitDest)
+			s += "\n"
 
-				#pygame.draw.rect(screen, Color("blue"), Rect(x * tileLengthScaled, y * tileLengthScaled, tileLengthScaled, tileLengthScaled), 1)
-				#screen.(tileFrameRect, blitDest)
+		print(s)
 
-				tileIndex += 1
 	else:
 		screen.fill(colorBackground)
 		blitSource.fill(Color("blue"))
 		blitDest = blitDestBase.move(100, 100)
 		screen.blit(blitSource, blitDest)
 
+	# 6. redraw
 	pygame.display.flip()
 	pygame.time.delay(500)
-#print ("0x%x" % (hexdumpval - dasmval  - brinstarMemDiff))
-#print ("%x" % (ofs - 0x8000 - brinstarMemDiff))
-
-#btsStr = fileContent[ofs : ofs + 0x10]
-#numBts = len(btsStr)
-#bts = struct.unpack("B" * numBts, btsStr)
-
-#print (" ".join(["%02x" % x for x in bts]))
-#print ("total address space: 0x%x" % len(fileContent))
-#print (" ".join(["%02x" % x for x in brinstarRoomPointerValues[0x17]]))
-#print (" ".join(["%02x" % x for x in roomData]))
-
 
 

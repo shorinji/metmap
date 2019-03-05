@@ -22,16 +22,24 @@ class Zone:
 		ZoneType.RIDLEY:   0x3FF0
 	}
 
+	# FROM Editroid/LevelRom.cs: LevelBanks
+	# Brinstar = 0x4000
+	# Norfair  = 0x8000
+	# Tourian  = 0xC000
+	# Kraid    = 0x10000
+	# Ridley   = 0x14000
+
+
 	def __init__(self, type):
 		if type in ZoneType:
 			self.type = type
 		else:
 			raise ValueError ("Zone(): Invalid type specified")
 
+	def getPalettePointers(self):
+		return self.palettePointers
+
 	def memoryDiff(self):
 		return self.memoryBankDiffs[self.type]
 
 
-class ZoneFactory:
-	def get(zoneType):
-		return Zone(zoneType)

@@ -6,6 +6,9 @@ class Room:
 		self.roomObjects = []
 
 
+	def getRoomObjects(self):
+		return self.roomObjects
+
 	def unpackRoom(self, offsetIndex, roomData):
 		roomBytes = len(roomData)
 
@@ -86,7 +89,7 @@ class Room:
 			x = pos & 0xF
 			y = pos >> 4
 			s += "  [%d] " % i
-			s += " tile: (%2d, %2d), obj: 0x%02x, palette: %2x\n" % (x, y, ptr, attr)
+			s += " tile: (%2d, %2d), obj: 0x%02x, palette: 0x%02x\n" % (x, y, ptr, attr)
 			i += 1
 
 		return s
